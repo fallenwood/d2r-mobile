@@ -1,5 +1,7 @@
 // Windows ARM64 客体栈桥：保存宿主非易失寄存器与 TEB 栈界限，退出时先回宿主栈再跑 pthread 析构。
 // Windows ARM64 guest-stack bridge: save host nonvolatile registers and TEB stack bounds; return before pthread destructors.
+// TEB+0x1478 是 ARM64 DeallocationStack，GetCurrentThreadStackLimits 用它作为预留栈底。
+// TEB+0x1478 is ARM64 DeallocationStack, the reservation limit returned by GetCurrentThreadStackLimits.
     .text
     .globl dm_windows_guest_enter
     .p2align 2
@@ -18,7 +20,10 @@ dm_windows_guest_enter:
     str x9, [x3, #160]
     ldp x9, x10, [x18, #8]
     stp x9, x10, [x3, #168]
+    ldr x9, [x18, #0x1478]
+    str x9, [x3, #184]
     stp x2, x4, [x18, #8]
+    str x4, [x18, #0x1478]
     mov sp, x2
     mov x29, #0
     mov x16, x0
@@ -33,6 +38,8 @@ dm_windows_guest_enter:
 dm_windows_guest_leave:
     ldp x9, x10, [x0, #168]
     stp x9, x10, [x18, #8]
+    ldr x9, [x0, #184]
+    str x9, [x18, #0x1478]
     ldr x9, [x0, #160]
     mov sp, x9
     ldp x19, x20, [x0, #0]

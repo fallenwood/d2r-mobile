@@ -9,6 +9,7 @@
 #include <signal.h>
 #include <unistd.h>
 #include "../../host/dm_sect.h"
+#include "../../host/dm.h"
 #include "../guest_libc.h"
 #include "../../host/dm_alloc.h"
 #include "rewrite_blocks.h"
@@ -22,6 +23,25 @@ static void *guest_memory;
 static int destroyed;
 static uint8_t *fault_page;
 static int fault_count;
+struct dm_flags g_flag;
+module_t g_mod[MAX_MOD];
+int g_nmod;
+static _Thread_local ULONG_PTR host_stack_low, host_stack_high, host_committed_low;
+extern uint64_t svc_dispatch(int number, uint64_t *registers, uint64_t origin);
+extern void svc_guest_range(uint8_t **base, size_t *size);
+void hlecount_svc(int number) { assert(number == 0x04 || number == 0x05 || number == 0x29); }
+int svc_thread(int number, uint64_t *registers) { (void)registers; hlecount_svc(number); return 0; }
+int svc_host_call(int number, uint64_t *registers) { (void)number; (void)registers; abort(); }
+uint64_t guest_ns(void) { abort(); }
+uint64_t dm_entropy64(void) { abort(); }
+module_t *module_of(const void *address) { (void)address; abort(); }
+void dm_backtrace(uint64_t fp) { (void)fp; abort(); }
+static uint64_t memory_svc(int number, uint64_t first, uint64_t second, uint64_t third) {
+    uint64_t registers[32] = {first, second, third};
+    svc_dispatch(number, registers, 0);
+    assert(registers[0] == 0);
+    return registers[1];
+}
 static void fault_handler(int number, siginfo_t *info, void *raw) {
     ucontext_t *context = raw;
     assert(number == SIGSEGV && info->si_addr == fault_page && (context->esr & (1ull << 6)));
@@ -51,23 +71,42 @@ static uint64_t execute_rewrite(const uint32_t *code, size_t size, uint64_t argu
 }
 #define EXECUTE(name, value) execute_rewrite(rewrite_##name, sizeof rewrite_##name, value)
 void dm_thread_returned(void) { fputs("unexpected guest return\n", stderr); abort(); }
-extern void dm_thread_enter(uint64_t entry, uint64_t argument, uint64_t sp);
 static void destructor(void *value) {
     assert(value == (void *)42);
     uintptr_t marker = (uintptr_t)&value;
     assert(marker < (uintptr_t)guest_memory || marker >= (uintptr_t)guest_memory + 65536);
+    ULONG_PTR low, high; GetCurrentThreadStackLimits(&low, &high);
+    assert(low == host_stack_low && high == host_stack_high);
+    assert((uintptr_t)((NT_TIB *)dm_windows_tsd_base())->StackLimit == host_committed_low);
     destroyed = 1;
+}
+extern void dm_windows_test_stack_exception(void);
+__attribute__((noinline)) static void guest_stack_fault(void) {
+    volatile uint8_t frame[16384];
+    for (size_t i = 0; i < sizeof frame; i++) frame[i] = (uint8_t)i;
+    *(volatile uint8_t *)fault_page = 78;
+    dm_windows_test_stack_exception();
+    ULONG_PTR low, high; GetCurrentThreadStackLimits(&low, &high);
+    assert(low <= (uintptr_t)frame && (uintptr_t)frame + sizeof frame <= high);
+    for (size_t i = 0; i < sizeof frame; i++) assert(frame[i] == (uint8_t)i);
 }
 static void guest_stack_entry(uint64_t value) {
     assert(value == 123);
     assert((uintptr_t)&value >= (uintptr_t)guest_memory && (uintptr_t)&value < (uintptr_t)guest_memory + 65536);
-    assert(pthread_get_stackaddr_np(pthread_self()) == (uint8_t *)guest_memory + 65536);
+    assert(pthread_get_stackaddr_np(pthread_self()) == (uint8_t *)guest_memory + 65536 - 32);
+    assert(pthread_get_stacksize_np(pthread_self()) == 65536 - 32);
+    assert(((NT_TIB *)dm_windows_tsd_base())->StackLimit == guest_memory);
+    guest_stack_fault();
     dm_windows_thread_exit();
 }
 static void *stack_worker(void *unused) {
     (void)unused;
     assert(!pthread_setspecific(owned, (void *)42));
-    dm_thread_enter((uintptr_t)guest_stack_entry, 123, (uintptr_t)guest_memory + 65536);
+    GetCurrentThreadStackLimits(&host_stack_low, &host_stack_high);
+    host_committed_low = (uintptr_t)((NT_TIB *)dm_windows_tsd_base())->StackLimit;
+    uint64_t sp = (uintptr_t)guest_memory + 65536 - 32, limit;
+    assert(svc_guest_stack_limit(sp, &limit) && limit == (uintptr_t)guest_memory);
+    dm_thread_enter((uintptr_t)guest_stack_entry, 123, sp, limit);
     abort();
 }
 static void *worker(void *argument) {
@@ -85,6 +124,8 @@ static void write_file(const char *path, const char *text) {
     close(fd);
 }
 int main(void) {
+    _set_abort_behavior(0, _WRITE_ABORT_MSG | _CALL_REPORTFAULT);
+    SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX);
     assert(sizeof(void *) == 8 && sizeof(long) == 4 && sizeof(off_t) == 8);
     uint64_t before = clock_gettime_nsec_np(CLOCK_MONOTONIC);
     uint64_t absolute = mach_absolute_time();
@@ -120,12 +161,46 @@ int main(void) {
     assert(registers[18] == (uintptr_t)dm_windows_tsd_base() && pthread_getspecific(g_key18) == (void *)789);
     void *aligned = dm_aligned_alloc(4096, 8192); assert(aligned && !((uintptr_t)aligned & 4095)); dm_aligned_free(aligned);
     puts("Rewriter: emitted ARM64 code executed natively, preserving TEB and guest x18 across TLS reads/writes and gates");
-    guest_memory = mmap(NULL, 65536, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
-    assert(guest_memory != MAP_FAILED && !pthread_key_create(&owned, destructor));
-    assert(!pthread_create(&thread, NULL, stack_worker, NULL));
-    assert(!pthread_join(thread, NULL) && destroyed);
-    assert(!munmap(guest_memory, 65536));
-    puts("Stacks: guest stack, TEB bounds and host-stack pthread destructors passed");
+    void *source = mmap(NULL, 65536, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
+    assert(source != MAP_FAILED && !pthread_key_create(&owned, destructor));
+    memset(source, 37, 65536);
+    uint64_t stack_region = memory_svc(0x29, 0, 14, 0);
+    guest_memory = (void *)(uintptr_t)(stack_region + 0x11000);
+    memory_svc(0x04, (uintptr_t)guest_memory, (uintptr_t)source, 65536);
+    assert(*(uint8_t *)guest_memory == 37);
+    uint64_t neighbor = (uintptr_t)guest_memory + 65536, limit;
+    memory_svc(0x04, neighbor, (uintptr_t)source, 4096);
+    assert(!svc_guest_stack_limit(0, &limit));
+    assert(!svc_guest_stack_limit((uintptr_t)guest_memory, &limit));
+    assert(!svc_guest_stack_limit((uintptr_t)guest_memory - 1, &limit));
+    assert(!svc_guest_stack_limit(neighbor + 4097, &limit));
+    assert(svc_guest_stack_limit(neighbor, &limit) && limit == (uintptr_t)guest_memory);
+    assert(svc_guest_stack_limit(neighbor + 4096, &limit) && limit == neighbor);
+    fault_page = mmap(NULL, 4096, PROT_READ, MAP_PRIVATE | MAP_ANON, -1, 0);
+    assert(fault_page != MAP_FAILED);
+    struct sigaction action = {.sa_sigaction = fault_handler, .sa_flags = SA_SIGINFO}, previous;
+    assert(!sigaction(SIGSEGV, &action, &previous));
+    for (int i = 0; i < 32; i++) {
+        DWORD old;
+        assert(VirtualProtect((uint8_t *)guest_memory + 61440, 4096,
+            PAGE_READWRITE | (i & 1 ? PAGE_NOCACHE : 0), &old));
+        assert(!mprotect(fault_page, 4096, PROT_READ));
+        fault_count = destroyed = 0;
+        assert(!pthread_create(&thread, NULL, stack_worker, NULL));
+        assert(!pthread_join(thread, NULL) && destroyed);
+        assert(fault_count == 1 && *fault_page == 78);
+    }
+    assert(!sigaction(SIGSEGV, &previous, NULL));
+    assert(!munmap(fault_page, 4096));
+    memory_svc(0x05, (uintptr_t)guest_memory, (uintptr_t)source, 65536);
+    assert(!svc_guest_stack_limit(neighbor, &limit));
+    assert(svc_guest_stack_limit(neighbor + 4096, &limit) && limit == neighbor);
+    memory_svc(0x05, neighbor, (uintptr_t)source, 4096);
+    assert(!svc_guest_stack_limit(neighbor + 4096, &limit));
+    assert(!munmap(source, 65536));
+    uint8_t *guest_base; size_t guest_size; svc_guest_range(&guest_base, &guest_size);
+    assert(!munmap(guest_base, guest_size));
+    puts("Stacks: exact SVC mapping bounds, 32 deep-stack write-fault/C++ recoveries, restored host TEB and pthread destructors passed");
     unsigned char *memory = mmap(NULL, 5ull << 30, PROT_NONE, MAP_PRIVATE | MAP_ANON, -1, 0);
     assert(memory != MAP_FAILED);
     assert(!mprotect(memory + (4ull << 30), 4096, PROT_READ | PROT_WRITE));
@@ -134,7 +209,7 @@ int main(void) {
     MEMORY_BASIC_INFORMATION info; assert(VirtualQuery(memory + (4ull << 30), &info, sizeof info));
     assert(info.Protect == PAGE_READONLY && memory[4ull << 30] == 77);
     fault_page = memory + (4ull << 30);
-    struct sigaction action = {.sa_sigaction = fault_handler, .sa_flags = SA_SIGINFO}, previous;
+    fault_count = 0;
     assert(!sigaction(SIGSEGV, &action, &previous));
     *(volatile uint8_t *)fault_page = 78;
     assert(fault_count == 1 && *fault_page == 78);

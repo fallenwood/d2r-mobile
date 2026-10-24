@@ -1,6 +1,7 @@
 // Windows 入口把命令行转换成 UTF-8，再交给同一公共宿主；不分发任何游戏资源。
 // Windows entry converts the command line to UTF-8 and invokes the shared host; no game resources are distributed.
 #include "dm_windows.h"
+#include "performance.h"
 #include <shellapi.h>
 #include <locale.h>
 int dm_main(int argc, char **argv);
@@ -10,6 +11,7 @@ int main(void) {
     _set_fmode(_O_BINARY);
     if (dm_windows_setenv("DM_WINDOW", "1", 0) || dm_windows_setenv("DM_AUDIO", "1", 0) ||
         dm_windows_setenv("DM_APP", "1", 0)) return 1;
+    if (dm_windows_performance_defaults()) return 1;
     int argc;
     wchar_t **wide = CommandLineToArgvW(GetCommandLineW(), &argc);
     if (!wide) { fprintf(stderr, "[dm] CommandLineToArgvW failed\n"); return 1; }

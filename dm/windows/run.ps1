@@ -6,6 +6,7 @@ param(
     [Parameter(Mandatory = $true)][string]$GameDir,
     [string]$Executable,
     [string]$SaveDir,
+    [switch]$ExperimentalGpuBatching,
     [switch]$CheckOnly
 )
 $ErrorActionPreference = 'Stop'
@@ -74,6 +75,7 @@ $settings = @{
     DM_VK_SHADER_DIR = $shaders; DM_SAVE = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($SaveDir)
     DM_TEMP = (Join-Path $Root 'temp'); DM_APP = '1'; DM_WINDOW = '1'
 }
+if ($ExperimentalGpuBatching) { $settings.DM_WINDOWS_GPU_BATCHING = '1' }
 $previous = @{}
 foreach ($name in $settings.Keys) {
     $previous[$name] = [Environment]::GetEnvironmentVariable($name, 'Process')

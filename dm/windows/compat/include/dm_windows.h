@@ -62,6 +62,7 @@ struct tm *localtime_r(const time_t *value, struct tm *out);
 int utimes(const char *path, const struct timeval times[2]);
 size_t pthread_get_stacksize_np(pthread_t thread);
 void *pthread_get_stackaddr_np(pthread_t thread);
+void dm_thread_enter(uint64_t entry, uint64_t argument, uint64_t sp, uint64_t limit);
 void dm_windows_thread_exit(void) __attribute__((noreturn));
 #ifndef CLOCK_UPTIME_RAW
 #define CLOCK_UPTIME_RAW CLOCK_MONOTONIC
