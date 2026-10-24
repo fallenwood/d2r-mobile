@@ -95,7 +95,7 @@ iPhone 与 iPad 共用一个安装包。
 
 ### 手柄
 
-接上手柄、按任意键，界面自动换成原版手柄布局，每个面板底部带按键提示；碰一下屏幕，立刻回到触屏界面。物品栏、储藏箱、技能树、编年史、设置页全程手柄可操作，键位与 Switch 一致。接的是 Xbox 手柄时会自动换成 PC / Xbox 版的键位（下确认、右返回），按键提示也换成 Xbox 的图标，不用去设置里开。
+接上手柄、按任意键，界面自动换成原版手柄布局，每个面板底部带按键提示；碰一下屏幕，立刻回到触屏界面。物品栏、储藏箱、技能树、编年史、设置页全程手柄可操作，键位与 Switch 一致。接的是 Xbox 手柄时会自动换成 PC / Xbox 版的键位（下确认、右返回），按键提示也换成 Xbox 的图标，不用去设置里开。接的是 PlayStation 手柄（DualSense 或 DualShock 4）时，按键提示自动换成游戏原版的 PS 图标（✕ 确认、○ 返回），由 [@Ti800](https://github.com/Ti800) 贡献（[#119](https://github.com/jhaizhou-ops/d2r-mobile/pull/119)）。
 
 <p align="center">
   <img src="https://github.com/jhaizhou-ops/d2r-mobile/releases/download/assets/pad_game.jpg" width="49%" alt="接手柄时的界面">
@@ -308,7 +308,7 @@ dm/tools/mac_app.sh                  # macOS 26 及以上：产出 ~/dm-work/out
 DM_MAC_M3=1 dm/tools/mac_app.sh      # macOS 15 – 25：产出 D2R Mobile M3.app
 ```
 
-界面用原版的手柄版界面。键盘：空格确认、Esc 返回、回车、`=` 键开菜单 / 新角色，W A S D 移动，其余手柄键各有对应。鼠标：点怪、NPC、物件会走过去交互，底部的技能格、药水格、按键提示、面板里的按钮和页签、建角时的职业、小地图都能点；点空地会走过去、按住一直走，点怪是攻击，物品的双击和拖放也认鼠标。用键盘时屏上的按键提示直接显示键盘键名。存档在这台 Mac 上（自己构建的 App 没有 iCloud 同步），可以从 iPhone / iPad 手工导入。键位表、建角怎么按、鼠标能做什么、导入步骤和已知不足，见 [docs/MAC.zh-CN.md](docs/MAC.zh-CN.md)。键盘、实体手柄这几项还未经真人操作，你试过的话，请告诉我们结果。
+界面用原版的手柄版界面。键盘：空格确认、Esc 返回、回车、`=` 键开菜单 / 新角色，W A S D 移动，其余手柄键各有对应。鼠标：点怪、NPC、物件会走过去交互，底部的技能格、药水格、按键提示、面板里的按钮和页签、建角时的职业、小地图都能点；点空地会走过去、按住一直走，点怪是攻击，物品的双击和拖放也认鼠标。用键盘时屏上的按键提示直接显示键盘键名。存档在这台 Mac 上（要 iCloud 同步需付费开发者账号、带 `DM_MAC_ICLOUD=1` 构建，见 [docs/MAC.zh-CN.md](docs/MAC.zh-CN.md)），可以从 iPhone / iPad 手工导入。键位表、建角怎么按、鼠标能做什么、导入步骤和已知不足，见 [docs/MAC.zh-CN.md](docs/MAC.zh-CN.md)。键盘、实体手柄这几项还未经真人操作，你试过的话，请告诉我们结果。
 
 ### 安卓
 

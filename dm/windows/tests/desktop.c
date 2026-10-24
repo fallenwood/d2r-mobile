@@ -35,7 +35,8 @@ int gate_obs_present(int id) { assert(id == OBS_NOTICE_INPUT); return 0; }
 void gate_obs_set(int id, void (*fn)(const uint64_t *)) { (void)id; (void)fn; abort(); }
 int dm_overlay_file(const char *relative, char *out, size_t size) {
     assert(!strcmp(relative, "ctrl_touch") || !strcmp(relative, "kbd_glyphs") ||
-           !strcmp(relative, "xbox_glyphs") || !strcmp(relative, "touch_strings.tsv"));
+           !strcmp(relative, "xbox_glyphs") || !strcmp(relative, "ps_glyphs") ||
+           !strcmp(relative, "touch_strings.tsv"));
     assert(strlen(sidecar) < size);
     strcpy(out, sidecar); return 1;
 }
@@ -65,11 +66,18 @@ int main(int argc, char **argv) {
     assert(g_have && dm_padmode_current() == desktop);
     assert(dm_padmode_kbd() == desktop);
     assert(g_glyph_have[DM_GLYPH_KBD] == desktop);
+    assert(g_glyph_have[DM_GLYPH_PS]);
+    assert(!strcmp(k_glyph_name[DM_GLYPH_PS], "PlayStation"));
     dm_padmode_request(0);
     assert(atomic_load(&g_want) == desktop);
     assert(!dm_padmode_busy());
     dm_padmode_request_glyph(DM_GLYPH_XBOX);
     assert(atomic_load(&g_glyph_want) == DM_GLYPH_XBOX);
+    dm_padmode_request_glyph(DM_GLYPH_PS);
+    assert(atomic_load(&g_glyph_want) == DM_GLYPH_PS);
+    g_glyph_have[DM_GLYPH_PS] = 0;
+    dm_padmode_request_glyph(DM_GLYPH_PS);
+    assert(atomic_load(&g_glyph_want) == DM_GLYPH_PAD);
     dm_padmode_request_glyph(DM_GLYPH_KBD);
     assert(atomic_load(&g_glyph_want) == (desktop ? DM_GLYPH_KBD : DM_GLYPH_PAD));
     free(g_mod[0].base);
