@@ -160,7 +160,8 @@ int present(void *, void *, VkImage source, VkFormat format, uint32_t width, uin
         VkResult presented = vkQueuePresentKHR(queue, &info);
         if ((result = vkWaitForFences(device, 1, &fence, VK_TRUE, 10000000000ull))) return result;
         if ((result = vkResetFences(device, 1, &fence))) return result;
-        if ((result = vkQueueWaitIdle(queue))) return result;
+        // fence 已结束所有源图像读取；呈现信号量按图像复用，等下次取得该图像即可。
+        // The fence completes all source-image reads; per-image present semaphores are reused only after reacquiring that image.
         if (presented == VK_ERROR_OUT_OF_DATE_KHR) { dirty = true; continue; }
         if (presented != VK_SUCCESS && presented != VK_SUBOPTIMAL_KHR) return presented;
         dirty = suboptimal || presented == VK_SUBOPTIMAL_KHR;

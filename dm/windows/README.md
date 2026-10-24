@@ -2,7 +2,7 @@
 
 中文: [README.zh-CN.md](README.zh-CN.md)
 
-**Native Windows ARM64 developer preview, not a fully accepted release.** The complete host loads genuine Windows-target modules, renders class selection and camp through Vulkan on a Qualcomm Adreno X1-85, and has completed an isolated test character's movement, item drag/drop, save/exit and reload across a process restart. The game-independent runtime can also be built and tested without game files. Audible playback, physical controllers, broader gameplay and long-run stability remain unaccepted. The initial class-selection run was approximately 5–6 FPS; performance is not release-ready.
+**Native Windows ARM64 developer preview, not a fully accepted release.** The complete host loads genuine Windows-target modules, renders class selection and camp through Vulkan on a Qualcomm Adreno X1-85, and has completed an isolated test character's movement, item drag/drop, save/exit and reload across a process restart. The game-independent runtime can also be built and tested without game files. Basic audible playback has passed a short user check; physical controllers, broader gameplay and long-run stability remain unaccepted. The initial class-selection run was approximately 5–6 FPS; see the measured improvements and their limits below.
 
 ## Requirements
 
@@ -45,12 +45,14 @@ Replace the example repository/tool paths with your own. `DM_BUILD_FRONTEND=OFF`
 
 | Check | Actual coverage |
 |---|---|
+| `windows-audio` | Real worker with mocked WASAPI endpoints: mono/stereo PCM order, variable refill sizes and missed-event recovery, queue target capped at 30 ms and actual capacity, priming before start, COM/MMCSS thread ownership, stop/resume, balanced playback timers, partial-open cleanup and explicit device-loss silent consumption; does not open speakers |
 | `windows-performance` | Conservative defaults, experimental batching opt-in/off, rejection of invalid mode values, preservation of explicit environment overrides and unchanged quality/dirty-tracker settings |
 | `windows-runtime` | Native ARM64 execution of synthetic TLS rewrite blocks; TEB preservation and guest x18 gate write-back; TLS isolation; actual SVC stack mapping/unmapping, exact bounds with adjacent mappings and page padding; 32 deep-stack write-fault/C++ exception recoveries across uniform/split protection regions; restoration of all host stack bounds before pthread destructors; 5 GiB reservations, protection and recoverable write faults; COFF registration; UTF-8 filenames; positioned I/O beyond 4 GiB without moving the file cursor; aligned allocation; file/directory NTFS metadata; atomic directory exchange and preservation after failure; LP64 calendar layout and post-2038 dates |
 | `windows-loader` | The existing synthetic ELF weak/strong import relocation test, using the real shared loader and import resolver |
 | `windows-tools` | Platform TLS opcodes, allocated stack saves, refusal of unsupported stack-exclusive windows, Mach-O-to-COFF conversion, rejection of x64/ARM64EC dependencies, and the native loader's acceptance of Windows target 3 and rejection of other/missing targets |
 | `windows-desktop`, `windows-touch-default` | Synthetic modules and overlay markers verify keyboard glyph selection, retention of the desktop layout after touch/controller-disconnect requests, contextual Return/Esc mappings, letterbox coordinates and unchanged non-desktop defaults |
 | `windows-mouse` | Reuses shared desktop mouse tests: world picks/held steering, UI/item gestures, coalesced hover, capture-loss cancellation and same-poll short clicks |
+| `windows-present` | Real callback with mocked WSI/GPU calls: source-use fence retained, no steady-state queue idle, per-image semaphore reuse, safe swapchain rebuild and out-of-date/suboptimal/timeout/device-loss paths; not GPU validation |
 | `windows-native-bc`, `windows-ldc-fold`, `windows-forward-temps`, `windows-pipeline-memo`, `windows-writeback` | Existing production-policy regressions for BC eligibility/copies, shader clean-ups, pipeline state/lifetime keys and writeback ranges/image-read ordering; CPU tests, not GPU equivalence |
 | Build | Shared host/HLE/graphics sources, actual converted entry/NVN assembly, Windows entry points, and (unless disabled) the real Vulkan engine, replay adapter and Win32 frontend |
 
@@ -64,7 +66,7 @@ Replace the example repository/tool paths with your own. `DM_BUILD_FRONTEND=OFF`
 - The guest is LP64 and Windows is LLP64. The libc table adapts long conversions and the 56-byte guest `tm` layout; aligned allocations use matching Windows deallocators.
 - Save commits require **transactional NTFS**. A single transaction exchanges committed/staged directories. No sequence of visible non-atomic renames is substituted when transactions fail. NTFS alternate streams preserve guest filename casing. Do not use exFAT, FAT, network shares or cloud-synced folders without independently proving the required semantics.
 - `DM_ROMFS_OVERLAY` uses **`;`** between Windows paths, for example `C:\mods\first;D:\mods\second`, so drive letters are not split at `:`.
-- The frontend uses a resizable Win32 window, an actual Win32 Vulkan surface/swapchain, letterboxed blits, XInput and native Unicode text entry. Closing requests a save before shared shutdown. Audio uses 48 kHz PCM16 WinMM; output failures are logged and follow the shared real-time silent-consumption policy.
+- The frontend uses a resizable Win32 window, an actual Win32 Vulkan surface/swapchain, letterboxed blits, XInput and native Unicode text entry. Closing requests a save before shared shutdown. Audio uses event-driven shared WASAPI with 48 kHz mono/stereo PCM16 and system format conversion; the existing 5.1 downmix remains shared. Output failures are logged and follow the real-time silent-consumption policy.
 - The Windows entry defaults to `DM_APP=1`: desktop/controller layouts with keyboard glyphs, changing to Xbox glyphs on controller input. Mouse touch events do not switch to the mobile layout, whose native button/bar drawing layer is absent on Windows.
 - `mach_absolute_time` uses monotonic nanoseconds. Apple retired-instruction counting returns `ENOTSUP` with a diagnostic, not CPU cycles presented as instructions. `DM_SAMPLE` requires POSIX thread signals and fails explicitly on Windows.
 
@@ -113,7 +115,7 @@ GPU batching is **experimental and off by default**. Opt in for one launch:
   *> C:\dm-work\windows\perf-batching.log
 ```
 
-The switch sets process-local `DM_WINDOWS_GPU_BATCHING=1`, restored on launcher exit. It defaults the existing Vulkan settings to `DM_GFX_DEFER_EVENTS=2`, `DM_GFX_READ_PREFLIGHT=0` and `DM_GFX_XVIEW_GUARD=1`; explicit graphics environment overrides and engine marker files still take priority. Direct executable launches can use the same opt-in environment variable (`0` disables the profile; other values fail). In this profile events publish at slot retirement instead of forcing a submission at each signal, and operations no longer globally drain all pending results before every draw. The existing range-based readback checks and guarded cross-slot GPU copies remain in use. Queries are not disabled, but some reads of counter memory can observe the previous resolved report, introducing one frame of latency. The Win32 presenter's fence/queue-idle waits remain intact; this is GPU-work batching, not an unverified asynchronous presenter.
+The switch sets process-local `DM_WINDOWS_GPU_BATCHING=1`, restored on launcher exit. It defaults the existing Vulkan settings to `DM_GFX_DEFER_EVENTS=2`, `DM_GFX_READ_PREFLIGHT=0` and `DM_GFX_XVIEW_GUARD=1`; explicit graphics environment overrides and engine marker files still take priority. Direct executable launches can use the same opt-in environment variable (`0` disables the profile; other values fail). In this profile events publish at slot retirement instead of forcing a submission at each signal, and operations no longer globally drain all pending results before every draw. The existing range-based readback checks and guarded cross-slot GPU copies remain in use. Queries are not disabled, but some reads of counter memory can observe the previous resolved report, introducing one frame of latency. The Win32 presenter's source-use fence remains mandatory; the separate presentation change below removes only the redundant steady-state whole-queue wait.
 
 On the Adreno X1-85, three separate user-launched runs produced these **60-frame-window medians** in warmed, matched character selection (970–971 draws, 56 passes, eight dispatches, 97 pipelines). All used 1600×900 rendering, configured 3D scale 1.00, with no logged dynamic-scale reductions:
 
@@ -128,3 +130,24 @@ On the Adreno X1-85, three separate user-launched runs produced these **60-frame
 Conservative defaults also reduced live image allocations from about 790 MB to 309 MB in this scene. The batching run later entered camp, where six separate observation windows ranged from 35.87 to 53.01 FPS; these are **not** matched camp A/B results. The user reported normal visuals. That run logged one existing `DM_TOUCH_SCRIPT` loading-screen timeout at tick 125, then the loading screen cleared at tick 134 and shutdown completed normally. The warning remains unresolved; combat, long-run stability and rendering equivalence are not accepted. These sequential measurements are game-present throughput, not instrumented display scanout or an A/B/A study.
 
 To reproduce, use separate pristine/current executable paths and a disposable save directory; never run both hosts on the same save. Keep the selected character, window size, foreground state, cache warm-up and other settings fixed. Use identical `DM_3D_SCALE=1` and `DM_3D_SCALE_DYN=0` in both measurement processes to pin quality, omit the experimental switch for the conservative run, wait at least 60 seconds in the same scene, then close normally. Compare the `NVN PERF v=1` 60-frame reports after loading/pipeline creation has settled; do not combine menu, loading and camp samples or use the startup/60-Hz refresh rate as FPS.
+
+## Audio continuity and presentation waits
+
+The original WinMM backend intermittently returned all three 10 ms headers together. In a dropout reproduction the game supplied PCM without underruns, the render callback took at most 0.03 ms, and individual worker waits stayed below 12.8 ms, yet refill gaps reached 40.34 ms. Raising the worker to MMCSS alone did not eliminate audible dropouts/crackling.
+
+WASAPI now refills from `GetCurrentPadding`, driven by the audio engine's event with a bounded 10 ms fallback for missed notifications/device loss. The same worker owns COM initialization, all endpoint calls, priming before start, stop/reset and release. It registers MMCSS `Audio`/high; the process requests 1 ms timer precision only while playing and balances that request on stop, startup failure and close. Audio-engine buffer capacity is queried, not assumed: the queued target is **at most 1,440 frames / 30 ms**, capped by the actual endpoint capacity. The observed device provided 1,056 frames / **22 ms**. These are application queue durations, not measured end-to-end acoustic latency. No game-side queue depth or mixing coefficients were changed.
+
+The final user-launched run reached camp and area 2, committed saves and shut down normally. Across approximately 120 seconds it submitted 5,757,696 PCM frames in 11,994 refills, with **zero empty device queues and zero game PCM underruns**; the longest refill gap was 13.18 ms, render 0.09 ms and buffer submission including render 0.39 ms. The user reported continuous sound without crackling. This is short-run acceptance on one endpoint, not Bluetooth/hotplug or long-run audio acceptance. Startup failures hand back to the shared silent sink; loss of an active endpoint is explicitly logged and consumed silently in real time until stopped/closed.
+
+The presenter no longer calls `vkQueueWaitIdle` after every presented frame. It still waits for the blit fence before returning, so all external source-image reads have completed, as required by the shared engine. Present semaphores remain per swapchain image and are reused after reacquiring that image; swapchain rebuild and teardown still drain outstanding work. FIFO presentation, rendering quality and the batching opt-in/default are unchanged.
+
+A **short intermediate diagnostic run**, before the WASAPI replacement but with this presenter change and MMCSS/timer scheduling, provided matched warmed class-selection windows (943–944 draws, 56 passes, eight dispatches, 97 pipelines, 48 layouts):
+
+| Metric | Existing batching baseline | Intermediate candidate |
+|---|---:|---:|
+| Matched 60-frame windows / duration | 18 / 26.53 s | 3 / 3.06 s |
+| Game-present FPS median (range) | 41.65 (30.77–47.37) | 59.56 (57.23–59.68) |
+| Present CPU wall time median, ms/frame | 16.66 | 9.76 |
+| Submit CPU wall time median, ms/frame | 3.82 | 3.64 |
+
+These are sequential observations, not an isolated queue-idle A/B/A experiment. The final WASAPI run did not retain matching class-selection windows, so the table is **not** a final-version FPS benchmark or a camp performance comparison. Use the reproduction controls above for longer matched measurements.

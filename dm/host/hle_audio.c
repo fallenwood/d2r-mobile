@@ -245,13 +245,13 @@ static int au_open(aout *a) {
     a->mix = a->ch == 6;
     if (a->mix && !a->mixbuf) a->mixbuf = malloc(MIXMAX * 12);
     if (a->mix && !a->mixbuf) { LOG("audio: mix buffer allocation failed; using silent sink"); return -1; }
-    a->au = dm_waveout_open(a->mix ? 2 : a->ch, windows_render, a);
-    if (!a->au) { LOG("audio: WinMM unavailable; using real-time silent sink"); return -1; }
+    a->au = dm_audio_open(a->mix ? 2 : a->ch, windows_render, a);
+    if (!a->au) { LOG("audio: WASAPI unavailable; using real-time silent sink"); return -1; }
     return 0;
 }
-static int dev_start(aout *a) { return dm_waveout_start(a->au); }
-static void dev_stop(aout *a) { dm_waveout_stop(a->au); }
-static void dev_close(aout *a) { dm_waveout_close(a->au); a->au = NULL; }
+static int dev_start(aout *a) { return dm_audio_start(a->au); }
+static void dev_stop(aout *a) { dm_audio_stop(a->au); nq_report(nq_phase()); }
+static void dev_close(aout *a) { dm_audio_close(a->au); a->au = NULL; }
 #elif defined(__OHOS__)
 // 鸿蒙：OHAudio 低时延渲染流（16 位、48 kHz、游戏用途），写数据回调直接调 render。
 // 系统报错（音频服务重启等）时与安卓一样交给普通线程关掉重开，原来在播就接着播；路由切换（耳机、蓝牙）由 OHAudio 自行跟随。
