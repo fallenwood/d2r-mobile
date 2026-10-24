@@ -245,7 +245,11 @@ static void thread_exit(thr_t *t) {
     pthread_setspecific(g_keythr, NULL);
     if (t->closed) thr_free(t);
     pthread_mutex_unlock(&G);
+#ifdef _WIN32
+    dm_windows_thread_exit();
+#else
     pthread_exit(NULL);
+#endif
 }
 void dm_thread_returned(void) { die("客体线程入口函数返回（Horizon 要求 ExitThread）"); }
 
