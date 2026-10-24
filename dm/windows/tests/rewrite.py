@@ -6,6 +6,7 @@ from itertools import combinations
 import os
 from pathlib import Path
 import re
+import shutil
 import struct
 import subprocess
 import sys
@@ -106,6 +107,80 @@ class ToolsTest(unittest.TestCase):
                 else:
                     with self.assertRaises(ValueError):
                         check(path)
+
+    @unittest.skipUnless(os.name == "nt", "Windows launcher environment")
+    def test_launcher_environment(self):
+        powershell = shutil.which("pwsh") or shutil.which("powershell")
+        self.assertIsNotNone(powershell, "Windows PowerShell is required")
+        script = r"""
+param([string]$Launcher, [string]$Root)
+$ErrorActionPreference = 'Stop'
+$ast = [Management.Automation.Language.Parser]::ParseFile($Launcher, [ref]$null, [ref]$null)
+$start = $ast.EndBlock.Statements | Where-Object {
+    $_ -is [Management.Automation.Language.AssignmentStatementAst] -and
+    $_.Left -is [Management.Automation.Language.VariableExpressionAst] -and
+    $_.Left.VariablePath.UserPath -eq 'settings'
+} | Select-Object -First 1
+if (-not $start) { throw 'Launcher environment scope not found' }
+$launch = [scriptblock]::Create($ast.Extent.Text.Substring($start.Extent.StartOffset))
+$romfs = Join-Path $Root 'romfs'
+$overlay = Join-Path $Root 'overlay'
+$shaders = Join-Path $Root 'shaders'
+$SaveDir = Join-Path $Root 'saves'
+$out = Join-Path $Root 'out'
+$Executable = 'Test-Child'
+$names = @('DM_ROOT', 'DM_ROMFS', 'DM_ROMFS_OVERLAY', 'DM_VK_SHADER_DIR', 'DM_SAVE',
+    'DM_TEMP', 'DM_APP', 'DM_WINDOW', 'DM_WINDOWS_GPU_BATCHING', 'DM_PRESENT_HZ', 'DM_PRESENT_INTERVAL')
+function Test-Child {
+    if (-not [object]::Equals($ExpectedHz, [Environment]::GetEnvironmentVariable('DM_PRESENT_HZ', 'Process')) -or
+        -not [object]::Equals($ExpectedInterval, [Environment]::GetEnvironmentVariable('DM_PRESENT_INTERVAL', 'Process'))) {
+        throw 'Child received incorrect pacing'
+    }
+    $global:LASTEXITCODE = $ChildExitCode
+}
+foreach ($initial in @([NullString]::Value, '', 'inherited')) {
+    foreach ($target in @($null, 60, 120)) {
+        foreach ($ExperimentalGpuBatching in @($false, $true)) {
+            foreach ($ChildExitCode in @(0, 7)) {
+                $before = @{}
+                foreach ($name in $names) {
+                    [Environment]::SetEnvironmentVariable($name, $initial, 'Process')
+                    $before[$name] = [Environment]::GetEnvironmentVariable($name, 'Process')
+                }
+                [Nullable[int]]$TargetFps = $target
+                $ExpectedHz = if ($null -ne $TargetFps) { "$TargetFps" } else { $before.DM_PRESENT_HZ }
+                $ExpectedInterval = if ($null -ne $TargetFps) { 'display' } else { $before.DM_PRESENT_INTERVAL }
+                $failed = $false
+                try { & $launch } catch {
+                    if ($ChildExitCode -ne 7 -or $_.Exception.Message -ne 'Windows host exited with code 7.') { throw }
+                    $failed = $true
+                }
+                if ($failed -ne ($ChildExitCode -ne 0)) { throw 'Child failure was not reported' }
+                foreach ($name in $names) {
+                    if (-not [object]::Equals($before[$name], [Environment]::GetEnvironmentVariable($name, 'Process'))) {
+                        throw "Environment restoration mismatch: $name"
+                    }
+                }
+            }
+        }
+    }
+}
+foreach ($target in @(0, 30, 121, -1)) {
+    $rejected = $false
+    try { & $Launcher -Root $Root -GameDir $Root -TargetFps $target -CheckOnly }
+    catch [Management.Automation.ParameterBindingException] { $rejected = $true }
+    if (-not $rejected) { throw "Invalid target accepted: $target" }
+}
+$global:LASTEXITCODE = 0
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "launcher-test.ps1"
+            path.write_text(script, encoding="ascii")
+            result = subprocess.run(
+                [powershell, "-NoProfile", "-NonInteractive", "-File", str(path),
+                 "-Launcher", str(DM / "windows" / "run.ps1"), "-Root", directory],
+                capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_loader_target_rejection(self):
         if not ARGS.loader:

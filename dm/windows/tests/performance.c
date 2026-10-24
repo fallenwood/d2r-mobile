@@ -5,7 +5,8 @@
 
 int main(void) {
     const char *enabled[] = {"DM_GFX_NATIVE_BC", "DM_GFX_LDC_FOLD", "DM_GFX_FORWARD_TEMPS", "DM_GFX_PIPE_MEMO"};
-    const char *unchanged[] = {"DM_GFX_DEFER_EVENTS", "DM_GFX_READ_PREFLIGHT", "DM_GFX_XVIEW_GUARD", "DM_3D_SCALE", "DM_GFX_VCACHE", "DM_GFX_TEX_DIRTY"};
+    const char *unchanged[] = {"DM_GFX_DEFER_EVENTS", "DM_GFX_READ_PREFLIGHT", "DM_GFX_XVIEW_GUARD", "DM_3D_SCALE", "DM_GFX_VCACHE", "DM_GFX_TEX_DIRTY",
+        "DM_GFX_NOLOAD", "DM_PRESENT_HZ", "DM_PRESENT_INTERVAL"};
     assert(!dm_windows_unsetenv("DM_WINDOWS_GPU_BATCHING"));
     for (size_t i = 0; i < sizeof enabled / sizeof enabled[0]; i++) assert(!dm_windows_unsetenv(enabled[i]));
     for (size_t i = 0; i < sizeof unchanged / sizeof unchanged[0]; i++) assert(!dm_windows_unsetenv(unchanged[i]));
@@ -31,6 +32,8 @@ int main(void) {
     assert(!strcmp(getenv("DM_GFX_READ_PREFLIGHT"), "0"));
     assert(!strcmp(getenv("DM_GFX_XVIEW_GUARD"), "1"));
     assert(!strcmp(getenv("DM_3D_SCALE"), "1.0"));
+    assert(!getenv("DM_GFX_NOLOAD"));
+    assert(!getenv("DM_PRESENT_HZ") && !getenv("DM_PRESENT_INTERVAL"));
     assert(!dm_windows_setenv("DM_GFX_DEFER_EVENTS", "0", 1));
     assert(!dm_windows_setenv("DM_GFX_READ_PREFLIGHT", "1", 1));
     assert(!dm_windows_setenv("DM_GFX_XVIEW_GUARD", "0", 1));

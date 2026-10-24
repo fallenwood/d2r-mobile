@@ -49,10 +49,10 @@ Replace the example repository/tool paths with your own. `DM_BUILD_FRONTEND=OFF`
 | `windows-performance` | Conservative defaults, experimental batching opt-in/off, rejection of invalid mode values, preservation of explicit environment overrides and unchanged quality/dirty-tracker settings |
 | `windows-runtime` | Native ARM64 execution of synthetic TLS rewrite blocks; TEB preservation and guest x18 gate write-back; TLS isolation; actual SVC stack mapping/unmapping, exact bounds with adjacent mappings and page padding; 32 deep-stack write-fault/C++ exception recoveries across uniform/split protection regions; restoration of all host stack bounds before pthread destructors; 5 GiB reservations, protection and recoverable write faults; COFF registration; UTF-8 filenames; positioned I/O beyond 4 GiB without moving the file cursor; aligned allocation; file/directory NTFS metadata; atomic directory exchange and preservation after failure; LP64 calendar layout and post-2038 dates |
 | `windows-loader` | The existing synthetic ELF weak/strong import relocation test, using the real shared loader and import resolver |
-| `windows-tools` | Platform TLS opcodes, allocated stack saves, refusal of unsupported stack-exclusive windows, Mach-O-to-COFF conversion, rejection of x64/ARM64EC dependencies, and the native loader's acceptance of Windows target 3 and rejection of other/missing targets |
+| `windows-tools` | Platform TLS opcodes, allocated stack saves, refusal of unsupported stack-exclusive windows, Mach-O-to-COFF conversion, rejection of x64/ARM64EC dependencies, native loader target checks; real launcher environment scope with a stubbed child: omitted/60/120 pacing, absent/empty/value restoration after success/failure, and invalid-target rejection |
 | `windows-desktop`, `windows-touch-default` | Synthetic modules and overlay markers verify keyboard glyph selection, retention of the desktop layout after touch/controller-disconnect requests, contextual Return/Esc mappings, letterbox coordinates and unchanged non-desktop defaults |
 | `windows-mouse` | Reuses shared desktop mouse tests: world picks/held steering, UI/item gestures, coalesced hover, capture-loss cancellation and same-poll short clicks |
-| `windows-present` | Real callback with mocked WSI/GPU calls: source-use fence retained, no steady-state queue idle, per-image semaphore reuse, safe swapchain rebuild and out-of-date/suboptimal/timeout/device-loss paths; not GPU validation |
+| `windows-present` | Real callback with mocked WSI/GPU calls: Windows/mixed/UNC shader-path normalization, source-use fence retained, no steady-state queue idle, per-image semaphore reuse, safe swapchain rebuild and out-of-date/suboptimal/timeout/device-loss paths; not GPU validation |
 | `windows-native-bc`, `windows-ldc-fold`, `windows-forward-temps`, `windows-pipeline-memo`, `windows-writeback` | Existing production-policy regressions for BC eligibility/copies, shader clean-ups, pipeline state/lifetime keys and writeback ranges/image-read ordering; CPU tests, not GPU equivalence |
 | Build | Shared host/HLE/graphics sources, actual converted entry/NVN assembly, Windows entry points, and (unless disabled) the real Vulkan engine, replay adapter and Win32 frontend |
 
@@ -130,6 +130,31 @@ On the Adreno X1-85, three separate user-launched runs produced these **60-frame
 Conservative defaults also reduced live image allocations from about 790 MB to 309 MB in this scene. The batching run later entered camp, where six separate observation windows ranged from 35.87 to 53.01 FPS; these are **not** matched camp A/B results. The user reported normal visuals. That run logged one existing `DM_TOUCH_SCRIPT` loading-screen timeout at tick 125, then the loading screen cleared at tick 134 and shutdown completed normally. The warning remains unresolved; combat, long-run stability and rendering equivalence are not accepted. These sequential measurements are game-present throughput, not instrumented display scanout or an A/B/A study.
 
 To reproduce, use separate pristine/current executable paths and a disposable save directory; never run both hosts on the same save. Keep the selected character, window size, foreground state, cache warm-up and other settings fixed. Use identical `DM_3D_SCALE=1` and `DM_3D_SCALE_DYN=0` in both measurement processes to pin quality, omit the experimental switch for the conservative run, wait at least 60 seconds in the same scene, then close normally. Compare the `NVN PERF v=1` 60-frame reports after loading/pipeline creation has settled; do not combine menu, loading and camp samples or use the startup/60-Hz refresh rate as FPS.
+
+## 120 FPS pacing and current limits
+
+`-TargetFps 60` or `-TargetFps 120` explicitly selects host pacing for one launch, using the existing `DM_PRESENT_HZ` and display-interval mode. Omitting it preserves automatic pacing and inherited settings; the automatic policy can still select 60 FPS on a 120 Hz screen. The launcher restores environment values even after a failed child process; previously absent variables are deleted rather than left as empty strings. The option does **not** change Windows refresh rate, simulation ticks, resolution, 3D scale or FIFO presentation, and does not guarantee the requested FPS:
+
+```powershell
+.\dm\windows\run.ps1 -Root C:\dm-work\windows -GameDir C:\games\Update `
+  -Executable C:\dm-work\windows\build-perf\dmhost.exe `
+  -SaveDir C:\dm-work\windows\saves-smoke -ExperimentalGpuBatching -TargetFps 120
+```
+
+The Windows presenter normalizes shader-directory separators before calling the shared engine. Its parent-directory lookup uses `/`; without normalization, backslash paths incorrectly placed marker/cache lookups inside `shaders`. Markers such as `<Root>\gfx-pass-profile` and pipeline caches now resolve next to `shaders`, as intended. Old caches inside `shaders` are not deleted; an absent cache at the corrected location is rebuilt.
+
+On this Adreno X1-85, native Windows display queries still reported a **60 Hz** desktop. Full-resolution camp profiling pinned 1600×900 rendering and `DM_3D_SCALE=1`, `DM_3D_SCALE_DYN=0`, `DM_3D_SCALE_GPU=0`. GPU time was approximately 10.6–10.7 ms/frame, above the 8.33 ms budget; representative per-pass samples attributed about 4.1 ms to the main scene, 1.3 ms to shadows and 0.74 ms to the depth pre-pass. These are observations at the current device/display state, not a hardware FPS ceiling.
+
+An existing optimization, `DM_GFX_NOLOAD=1`, skipped 13 color-attachment loads/frame only after proving that the first draw fully overwrites them. Separate camp runs had different workloads, so they were not treated as an A/B speedup. A same-process test instead alternated `gfx-ab-target=noload` every five seconds, disabled per-operation CPU timing, and compared identical 892-draw / 53-pass / 10-dispatch / 180-pipeline / 62-layout windows, discarding the first reported window of each phase:
+
+| 60-frame-window median | Optimization off | Optimization on |
+|---|---:|---:|
+| Matched windows | 17 | 16 |
+| GPU time, ms/frame | 10.70 | 10.68 |
+| Submit-path CPU wall time, ms/frame, including waits | 3.81 | 3.80 |
+| Game-present throughput, FPS | 59.02 | 59.10 |
+
+This showed **no meaningful gain**, so the Windows defaults and experimental batching preset do not enable `DM_GFX_NOLOAD`. The user reported normal visuals/audio; the run recorded zero empty WASAPI queues and zero game PCM underruns. Temporary profiling/A/B markers were removed afterward. CPU wall/wait and GPU fields overlap and must not be summed or converted into a claimed FPS. **120 FPS remains unachieved and unaccepted**; neither changing pacing nor a 60 Hz run proves 120 Hz display output. The 120 setting is experimental: frame-counted UI and gameplay behavior at an actual 120 Hz have not been accepted. Further rendering optimization and a fixed-120-Hz acceptance run are still required.
 
 ## Audio continuity and presentation waits
 

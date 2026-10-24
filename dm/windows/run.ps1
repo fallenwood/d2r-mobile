@@ -7,6 +7,7 @@ param(
     [string]$Executable,
     [string]$SaveDir,
     [switch]$ExperimentalGpuBatching,
+    [ValidateSet(60, 120)][Nullable[int]]$TargetFps,
     [switch]$CheckOnly
 )
 $ErrorActionPreference = 'Stop'
@@ -76,6 +77,10 @@ $settings = @{
     DM_TEMP = (Join-Path $Root 'temp'); DM_APP = '1'; DM_WINDOW = '1'
 }
 if ($ExperimentalGpuBatching) { $settings.DM_WINDOWS_GPU_BATCHING = '1' }
+if ($null -ne $TargetFps) {
+    $settings.DM_PRESENT_HZ = "$TargetFps"
+    $settings.DM_PRESENT_INTERVAL = 'display'
+}
 $previous = @{}
 foreach ($name in $settings.Keys) {
     $previous[$name] = [Environment]::GetEnvironmentVariable($name, 'Process')
@@ -86,5 +91,10 @@ try {
     & $Executable $out
     if ($LASTEXITCODE -ne 0) { throw "Windows host exited with code $LASTEXITCODE." }
 } finally {
-    foreach ($name in $previous.Keys) { [Environment]::SetEnvironmentVariable($name, $previous[$name], 'Process') }
+    foreach ($name in $previous.Keys) {
+        $value = $previous[$name]
+        # PowerShell converts $null to an empty string for .NET string arguments.
+        if ($null -eq $value) { $value = [NullString]::Value }
+        [Environment]::SetEnvironmentVariable($name, $value, 'Process')
+    }
 }

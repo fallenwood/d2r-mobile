@@ -176,6 +176,8 @@ extern "C" int dm_windows_vk_initialize(HWND target, const char *shaders, char *
     };
     if (instance || !IsWindow(target) || !shaders || !*shaders) return fail("Invalid Windows Vulkan initialization", VK_ERROR_INITIALIZATION_FAILED);
     window = target; shader_directory = shaders;
+    // The shared engine locates parent-directory markers and caches using '/'.
+    std::replace(shader_directory.begin(), shader_directory.end(), '\\', '/');
     VkApplicationInfo app{VK_STRUCTURE_TYPE_APPLICATION_INFO}; app.pApplicationName = "D2R Mobile"; app.apiVersion = VK_API_VERSION_1_1;
     const char *extensions[] = {VK_KHR_SURFACE_EXTENSION_NAME, VK_KHR_WIN32_SURFACE_EXTENSION_NAME};
     VkInstanceCreateInfo create{VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};

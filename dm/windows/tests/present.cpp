@@ -16,6 +16,9 @@ template<class T> static T handle(unsigned value) { return (T)(uintptr_t)value; 
 static BOOL WINAPI test_window(HWND) { return TRUE; }
 static BOOL WINAPI test_iconic(HWND) { return FALSE; }
 static BOOL WINAPI test_rect(HWND, LPRECT rect) { *rect = {0, 0, 1600, 900}; return TRUE; }
+static VkResult test_create_instance(const VkInstanceCreateInfo *, const VkAllocationCallbacks *, VkInstance *) {
+    return VK_ERROR_INITIALIZATION_FAILED;
+}
 static void test_format(VkPhysicalDevice, VkFormat, VkFormatProperties *properties) {
     *properties = {};
     properties->optimalTilingFeatures = VK_FORMAT_FEATURE_BLIT_SRC_BIT | VK_FORMAT_FEATURE_BLIT_DST_BIT |
@@ -91,6 +94,7 @@ static void test_blit(VkCommandBuffer, VkImage source, VkImageLayout from, VkIma
 #define IsWindow test_window
 #define IsIconic test_iconic
 #define GetClientRect test_rect
+#define vkCreateInstance test_create_instance
 #define vkGetPhysicalDeviceFormatProperties test_format
 #define vkGetPhysicalDeviceSurfaceCapabilitiesKHR test_caps
 #define vkGetPhysicalDeviceSurfaceFormatsKHR test_formats
@@ -118,6 +122,16 @@ static int frame() {
     return present(nullptr, nullptr, handle<VkImage>(50), VK_FORMAT_B8G8R8A8_UNORM, 1600, 900, nullptr, 1);
 }
 int main() {
+    char error[256];
+    const char *directories[] = {"C:\\Games\\d2\\shaders", "C:/Games/d2/shaders", "C:\\Games/d2\\shaders",
+        "\\\\server\\share\\shaders"};
+    const char *normalized[] = {"C:/Games/d2/shaders", "C:/Games/d2/shaders", "C:/Games/d2/shaders",
+        "//server/share/shaders"};
+    for (unsigned i = 0; i < 4; i++) {
+        assert(dm_windows_vk_initialize(handle<HWND>(1), directories[i], error, sizeof error) != 0);
+        assert(shader_directory == normalized[i] && !instance && !device);
+        assert(strstr(error, "vkCreateInstance"));
+    }
     window = handle<HWND>(1); device = handle<VkDevice>(2); physical = handle<VkPhysicalDevice>(3);
     queue = handle<VkQueue>(4); surface = handle<VkSurfaceKHR>(5); swapchain = handle<VkSwapchainKHR>(6);
     pool = handle<VkCommandPool>(7); command = handle<VkCommandBuffer>(8);
